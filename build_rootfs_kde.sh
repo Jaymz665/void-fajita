@@ -46,7 +46,7 @@ chroot rootfs_mountpoint xbps-install -Suy kde-plasma kde-baseapps sddm mesa-fre
 
 mkdir rootfs_mountpoint/repo
 mount --bind repo rootfs_mountpoint/repo
-chroot rootfs_mountpoint xbps-install -y --repository /repo pipa-bt-quirk
+chroot rootfs_mountpoint xbps-install -y --repository /repo fajita-bt-quirk
 umount rootfs_mountpoint/repo
 rm -rf rootfs_mountpoint/repo
 
@@ -59,7 +59,7 @@ cp ../config/kde/sddm/50-theme.conf rootfs_mountpoint/etc/sddm.conf.d/
 # Enable services
 chroot rootfs_mountpoint /bin/bash -c "ln -sv /etc/sv/sddm /etc/runit/runsvdir/default"
 chroot rootfs_mountpoint /bin/bash -c "ln -sv /etc/sv/bluetoothd /etc/runit/runsvdir/default"
-chroot rootfs_mountpoint /bin/bash -c "ln -sv /etc/sv/pipa-bt-quirk /etc/runit/runsvdir/default"
+chroot rootfs_mountpoint /bin/bash -c "ln -sv /etc/sv/fajita-bt-quirk /etc/runit/runsvdir/default"
 
 chroot rootfs_mountpoint /sbin/usermod -aG audio,video,bluetooth user
 
