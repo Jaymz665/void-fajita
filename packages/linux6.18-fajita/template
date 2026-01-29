@@ -1,15 +1,15 @@
-# Template file for 'linux6.16-fajita'
-pkgname=linux6.16-fajita
-version=6.16.7
+# Template file for 'linux6.18-fajita'
+pkgname=linux6.18-fajita
+version=6.18.2
 revision=5
-_tag="sdm845-6.16.7-r0"
+_tag="sdm845-6.18.2-r0"
 short_desc="Linux kernel and modules (${version%.*} series for OnePlus 6t)"
 maintainer="Jaymz665 <jaymz665@gmail.com>"
 license="GPL-2.0-only"
 homepage="https://www.kernel.org"
 distfiles="https://gitlab.com/sdm845-mainline/linux/-/archive/${_tag}/linux-${_tag}.tar.gz"
 
-checksum="a9ce2fde510261d38f809e543abe4e90fbfd3a4e7a3eee3ea4a84b68d2d7d811"
+checksum="0ed510d6051aa6775929b9a805b7c507572b34b84fe105e92179b12012a35e88"
 
 python_version=3
 
@@ -24,7 +24,7 @@ preserve=yes
 hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
  pkg-config openssl-devel perl uboot-mkimage cpio pahole python3 zstd"
 
-_localversion="fajita"
+_localversion="jaymz665"
 _kernver="${version}-${_localversion}"
 triggers="kernel-hooks"
 kernel_hooks_version="${_kernver}"
