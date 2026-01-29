@@ -1,0 +1,45 @@
+# Template file for 'fajita-firmware'
+pkgname=fajita-firmware
+version=20241229
+revision=1
+wrksrc="firmware-oneplus-sdm845-${commit}"
+depends="linux-firmware-qualcomm linux-firmware-network"
+short_desc="Binary firmware blobs for the Xiaomi Pad 6"
+maintainer="Arseniy <me@adomerle.pw>"
+license="proprietary"
+homepage="https://github.com/fajita-mainline/xiaomi-fajita-firmware"
+commit="176ca713448c5237a983fb1f158cf3a5c251d775"
+distfiles="https://gitlab.com/sdm845-mainline/firmware-oneplus-sdm845/-/archive/${commit}/firmware-oneplus-sdm845-${commit}.tar.gz"
+checksum=e2b96870faaec34b9b750638affb2c4794df275fe35dee3e839cb1d6332ce99c
+archs="aarch64"
+nostrip=1
+ignore_elf_dirs="/usr/share/qcom"
+noshlibprovides=yes
+noverifyrdeps=yes
+
+do_install() {
+	cd "${wrksrc}"
+	
+	local firmware
+	
+	# firmware.files: ./lib/... → /usr/lib/...
+	while IFS= read -r firmware || [ -n "$firmware" ]; do
+		[ -z "$firmware" ] && continue
+		# Убираем ./
+		firmware="${firmware#./}"
+		# Преобразуем lib/ в usr/lib/
+		destdir="/usr/$(dirname "${firmware}")"
+		vinstall "${firmware}" 0644 "${destdir}"
+	done < "${FILESDIR}/firmware.files"
+
+	# sensor.files: ./usr/... → /usr/...
+	while IFS= read -r firmware || [ -n "$firmware" ]; do
+		[ -z "$firmware" ] && continue
+		# Убираем ./
+		firmware="${firmware#./}"
+		# Убираем ведущий / если есть
+		firmware="${firmware#/}"
+		destdir="/$(dirname "${firmware}")"
+		vinstall "${firmware}" 0644 "${destdir}"
+	done < "${FILESDIR}/sensor.files"
+}

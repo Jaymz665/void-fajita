@@ -1,0 +1,200 @@
+# Template file for 'linux6.16-fajita'
+pkgname=linux6.16-fajita
+version=6.16.7
+revision=5
+_tag="sdm845-6.16.7-r0"
+short_desc="Linux kernel and modules (${version%.*} series for OnePlus 6t)"
+maintainer="Jaymz665 <jaymz665@gmail.com>"
+license="GPL-2.0-only"
+homepage="https://www.kernel.org"
+distfiles="https://gitlab.com/sdm845-mainline/linux/-/archive/${_tag}/linux-${_tag}.tar.gz"
+
+checksum="a9ce2fde510261d38f809e543abe4e90fbfd3a4e7a3eee3ea4a84b68d2d7d811"
+
+python_version=3
+
+archs="aarch64*"
+
+nodebug=yes
+nostrip=yes
+noverifyrdeps=yes
+noshlibprovides=yes
+preserve=yes
+
+hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
+ pkg-config openssl-devel perl uboot-mkimage cpio pahole python3 zstd"
+
+# Уберем все предопределенные значения - будем получать из ядра
+triggers="kernel-hooks"
+kernel_hooks_version="auto"
+mutable_files="auto"
+
+# reproducible build
+export KBUILD_BUILD_TIMESTAMP=$(LC_ALL=C date -ud @${SOURCE_DATE_EPOCH:-0})
+export KBUILD_BUILD_USER=voidlinux
+export KBUILD_BUILD_HOST=voidlinux
+
+if [ "$CROSS_BUILD" ]; then
+	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
+fi
+
+do_configure() {
+	local arch
+	arch=arm64
+
+	cp -f ${FILESDIR}/fajita.config .config
+	
+	# Обязательно делаем olddefconfig
+	make ARCH=$arch ${_cross} olddefconfig
+	
+	# Проверим какое имя будет у ядра
+	msg_normal "Kernel version: $(make ARCH=$arch ${_cross} -s kernelversion)\n"
+	msg_normal "Kernel release: $(make ARCH=$arch ${_cross} -s kernelrelease)\n"
+}
+
+do_build() {
+	local arch _args
+	_args="Image modules dtbs"
+	arch=arm64
+
+	export LDFLAGS=
+	make ARCH=$arch ${_cross} ${makejobs} prepare
+	make ARCH=$arch ${_cross} ${makejobs} ${_args}
+}
+
+do_install() {
+	local arch hdrdest _kernel_release
+	arch=arm64
+
+	# Получаем реальное имя версии ядра
+	_kernel_release=$(make ARCH=$arch ${_cross} -s kernelrelease)
+	msg_normal "Installing kernel: ${_kernel_release}\n"
+	
+	# Устанавливаем триггеры с правильным именем
+	triggers="kernel-hooks"
+	kernel_hooks_version="${_kernel_release}"
+	
+	mutable_files="
+	 /usr/lib/modules/${_kernel_release}/modules.builtin.bin
+	 /usr/lib/modules/${_kernel_release}/modules.builtin.alias.bin
+	 /usr/lib/modules/${_kernel_release}/modules.softdep
+	 /usr/lib/modules/${_kernel_release}/modules.dep
+	 /usr/lib/modules/${_kernel_release}/modules.dep.bin
+	 /usr/lib/modules/${_kernel_release}/modules.symbols
+	 /usr/lib/modules/${_kernel_release}/modules.symbols.bin
+	 /usr/lib/modules/${_kernel_release}/modules.alias
+	 /usr/lib/modules/${_kernel_release}/modules.alias.bin
+	 /usr/lib/modules/${_kernel_release}/modules.devname"
+
+	# Run depmod after compressing modules - makes depmod.sh a noop
+	sed -i '2iexit 0' scripts/depmod.sh
+	
+	# КРИТИЧЕСКИЙ МОМЕНТ: создаем временную структуру как в стандартных шаблонах Void
+	# Ядро ожидает /lib/modules, но Void использует /usr/lib/modules
+	# Создаем временный симлинк /lib -> /usr/lib
+	vmkdir usr/lib
+	ln -sf usr/lib ${DESTDIR}/lib
+
+	# Install kernel, firmware and modules
+	# Используем INSTALL_MOD_PATH=${DESTDIR}, так как у нас есть симлинк /lib -> /usr/lib
+	make ${makejobs} ARCH=${arch} INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
+	
+	# Удаляем временный симлинк СРАЗУ после установки модулей
+	rm -f ${DESTDIR}/lib
+
+	# Проверяем что модули установились правильно
+	if [ ! -d "${DESTDIR}/usr/lib/modules/${_kernel_release}" ]; then
+		msg_error "Modules directory not found: ${DESTDIR}/usr/lib/modules/${_kernel_release}\n"
+		msg_error "Available modules directories:\n"
+		find ${DESTDIR} -name "modules" -type d 2>/dev/null | head -20
+		return 1
+	fi
+
+	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernel_release}
+
+	vinstall .config 644 boot config-${_kernel_release}
+	vinstall System.map 644 boot System.map-${_kernel_release}
+
+	vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernel_release}
+	
+	# Устанавливаем DTBS
+	make ${makejobs} ARCH=${arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs-tmp ${_cross} dtbs_install
+	
+	# Копируем только DTBS для SDM845
+	mkdir -p ${DESTDIR}/boot/dtbs-${_kernel_release}/qcom
+	cp -r ${DESTDIR}/boot/dtbs-tmp/qcom/sdm8* ${DESTDIR}/boot/dtbs-${_kernel_release}/qcom/ 2>/dev/null || :
+	rm -rf ${DESTDIR}/boot/dtbs-tmp
+
+	# Создаем ссылки в каталоге модулей
+	cd ${DESTDIR}/usr/lib/modules/${_kernel_release}
+	rm -f source build
+	ln -sf ../../../src/kernel-headers-${_kernel_release} build
+
+	# Устанавливаем заголовки ядра
+	cd ${wrksrc}
+	mkdir -p ${hdrdest}
+	
+	# Базовые файлы
+	install -Dm644 Makefile ${hdrdest}/
+	install -Dm644 .config ${hdrdest}/
+	install -Dm644 Module.symvers ${hdrdest}/
+	install -Dm644 System.map ${hdrdest}/
+	
+	# Скрипты
+	cp -a scripts ${hdrdest}/
+	
+	# Убираем firmware (предоставляется отдельным пакетом)
+	rm -rf ${DESTDIR}/usr/lib/firmware
+	
+	# Основные заголовки
+	mkdir -p ${hdrdest}/include
+	cp -a include/* ${hdrdest}/include/ 2>/dev/null || :
+	
+	# Архитектурные заголовки
+	mkdir -p ${hdrdest}/arch/${arch}/include
+	cp -a arch/${arch}/include/* ${hdrdest}/arch/${arch}/include/ 2>/dev/null || :
+	
+	# Убираем временные файлы для кросс-компиляции
+	if [ "$CROSS_BUILD" ]; then
+		make ${makejobs} ARCH=${arch} ${_cross} _mrproper_scripts
+		find ${hdrdest}/scripts -name '*.o' -delete 2>/dev/null || :
+	fi
+
+	# Дополнительные файлы для сборки внешних модулей
+	mkdir -p ${hdrdest}/security/selinux
+	cp -a security/selinux/include ${hdrdest}/security/selinux 2>/dev/null || :
+	
+	mkdir -p ${hdrdest}/tools/include
+	cp -a tools/include/tools ${hdrdest}/tools/include 2>/dev/null || :
+	
+	if [ -d "arch/${arch}/tools" ]; then
+		cp -a "arch/${arch}/tools" "${hdrdest}/arch/${arch}" 2>/dev/null || :
+	fi
+	
+	# Важные файлы ядра
+	install -Dm644 kernel/time/timeconst.bc "${hdrdest}/kernel/time"
+	install -Dm644 kernel/bounds.c "${hdrdest}/kernel" 2>/dev/null || :
+	install -Dm644 arch/${arch}/Makefile ${hdrdest}/arch/${arch}/ 2>/dev/null || :
+	
+	# Debug символы
+	install -Dm644 vmlinux ${DESTDIR}/usr/lib/debug/boot/vmlinux-${_kernel_release}
+	
+	# Генерируем зависимости модулей
+	depmod -b ${DESTDIR}/usr -F System.map ${_kernel_release} 2>/dev/null || :
+	
+	# Сохраняем версию ядра для использования в post_install
+	echo "${_kernel_release}" > ${wrksrc}/.kernel_release
+}
+
+post_install() {
+	# Читаем сохраненную версию ядра
+	if [ -f ${wrksrc}/.kernel_release ]; then
+		_kernel_release=$(cat ${wrksrc}/.kernel_release)
+		
+		# Создаем ссылки на последнее ядро
+		ln -sf vmlinux-${_kernel_release} ${DESTDIR}/boot/vmlinux
+		ln -sf config-${_kernel_release} ${DESTDIR}/boot/config
+		ln -sf System.map-${_kernel_release} ${DESTDIR}/boot/System.map
+		ln -sf dtbs-${_kernel_release} ${DESTDIR}/boot/dtbs
+	fi
+}

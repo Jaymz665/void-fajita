@@ -1,0 +1,16 @@
+# Template file for 'fajita-alsa-ucm'
+pkgname=fajita-alsa-ucm
+version=1
+revision=1
+short_desc="Alsa UCM Configs for OnePlus 6t"
+maintainer="Jaymz665 <jaymz665@gmail.com>"
+depends="alsa-ucm-conf"
+license="GPL2.0"
+homepage="https://github.com/pipa-mainline/void-pipa"
+archs="aarch64*"
+
+do_install() {
+	vinstall "${FILESDIR}/fajita.conf" 0644 "usr/share/alsa/ucm2/OnePlus/fajita/"
+	vinstall "${FILESDIR}/HiFi.conf" 0644 "usr/share/alsa/ucm2/OnePlus/fajita/"
+	vinstall "${FILESDIR}/VoiceCall.conf" 0644 "usr/share/alsa/ucm2/OnePlus/fajita/"
+}
