@@ -64,6 +64,7 @@ chroot rootfs_mountpoint bash -c "passwd user << EOD
 EOD"
 
 echo "%wheel ALL=(ALL:ALL) ALL" > rootfs_mountpoint/etc/sudoers.d/wheel
+echo "repository=https://repo-fastly.voidlinux.org/current/aarch64" > rootfs_mountpoint/etc/xbps.d/00-repository-main.conf
 
 chroot rootfs_mountpoint xbps-install -Syu xbps
 chroot rootfs_mountpoint xbps-install -Syuv
@@ -77,13 +78,18 @@ chroot rootfs_mountpoint /bin/bash -c "ln -sv /etc/sv/chronyd /etc/runit/runsvdi
 mkdir rootfs_mountpoint/repo
 mount --bind repo rootfs_mountpoint/repo
 chroot rootfs_mountpoint xbps-install -y --repository /repo $PACKAGES
+
 umount rootfs_mountpoint/repo
 rm -rf rootfs_mountpoint/repo
 
 cp rootfs_mountpoint/boot/boot-*.img ../$OUTDIR/boot.img
 
+echo ""
+read -p "Скрипт завершен. Нажмите Enter для размонтирования и выхода..."
+
 rm rootfs_mountpoint/qemu-aarch64-static
 umount -R rootfs_mountpoint
 img2simg linux.img ../$OUTDIR/void_base.img
 chown -Rvh 1000:1000 ../$OUTDIR
+
 popd

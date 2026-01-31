@@ -1,0 +1,76 @@
+# Template file for 'firmware-oneplus-sdm845'
+pkgname=firmware-oneplus-sdm845
+version=10
+revision=1
+wrksrc="firmware-oneplus-sdm845-${commit}"
+depends="linux-firmware-qualcomm linux-firmware-network"
+short_desc="Firmware for OnePlus 6 / 6T"
+maintainer="Arseniy <me@adomerle.pw>"
+license="proprietary"
+homepage="https://gitlab.com/sdm845-mainline/firmware-oneplus-sdm845"
+commit="176ca713448c5237a983fb1f158cf3a5c251d775"
+distfiles="https://gitlab.com/sdm845-mainline/firmware-oneplus-sdm845/-/archive/${commit}/firmware-oneplus-sdm845-${commit}.tar.gz"
+checksum=e2b96870faaec34b9b750638affb2c4794df275fe35dee3e839cb1d6332ce99c
+archs="aarch64"
+nostrip=1
+ignore_elf_dirs="/usr/share/qcom"
+noshlibprovides=yes
+noverifyrdeps=yes
+
+do_install() {
+    local firmware
+    
+    # 1. firmware.files - устанавливаем с сохранением структуры
+    while read -r firmware; do
+        [ -z "$firmware" ] && continue
+        # Убираем ./ если есть
+        firmware="${firmware#./}"
+        
+        # Проверяем существование файла
+        if [ ! -f "${wrksrc}/${firmware}" ]; then
+            msg_warn "File not found: ${firmware}"
+            continue
+        fi
+        
+        # Путь назначения: lib/firmware/... → /usr/lib/firmware/...
+        dest_dir="/usr/$(dirname "${firmware}")"
+        vinstall "${wrksrc}/${firmware}" 0644 "${dest_dir}"
+    done < "${FILESDIR}/firmware.files"
+    
+    # 2. sensor.files - устанавливаем с сохранением структуры
+    while read -r firmware; do
+        [ -z "$firmware" ] && continue
+        firmware="${firmware#./}"
+        
+        if [ ! -f "${wrksrc}/${firmware}" ]; then
+            msg_warn "File not found: ${firmware}"
+            continue
+        fi
+        
+        # Путь назначения: usr/share/... → /usr/share/...
+        dest_dir="/$(dirname "${firmware}")"
+        vinstall "${wrksrc}/${firmware}" 0644 "${dest_dir}"
+    done < "${FILESDIR}/sensor.files"
+    
+    # 3. Создаем симлинки для совместимости (как в оригинальном APKBUILD)
+    # Проверяем, что файлы установились в oneplus6
+    
+    # Для /usr/lib/firmware/qcom/sdm845/oneplus6 → OnePlus/oneplus6
+    if [ -d "${DESTDIR}/usr/lib/firmware/qcom/sdm845/oneplus6" ]; then
+        mkdir -p "${DESTDIR}/usr/lib/firmware/qcom/sdm845/OnePlus"
+        mv "${DESTDIR}/usr/lib/firmware/qcom/sdm845/oneplus6" \
+           "${DESTDIR}/usr/lib/firmware/qcom/sdm845/OnePlus/"
+    fi
+    
+    # Создаем симлинки для enchilada и fajita
+    if [ -d "${DESTDIR}/usr/lib/firmware/qcom/sdm845/OnePlus/oneplus6" ]; then
+        ln -sf oneplus6 "${DESTDIR}/usr/lib/firmware/qcom/sdm845/OnePlus/enchilada"
+        ln -sf oneplus6 "${DESTDIR}/usr/lib/firmware/qcom/sdm845/OnePlus/fajita"
+    fi
+    
+    # Для /usr/share/qcom/sdm845/OnePlus/oneplus6 симлинки уже должны быть созданы
+    if [ -d "${DESTDIR}/usr/share/qcom/sdm845/OnePlus/oneplus6" ]; then
+        ln -sf oneplus6 "${DESTDIR}/usr/share/qcom/sdm845/OnePlus/enchilada"
+        ln -sf oneplus6 "${DESTDIR}/usr/share/qcom/sdm845/OnePlus/fajita"
+    fi
+}
