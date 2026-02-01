@@ -45,7 +45,7 @@ mount --bind /dev/pts rootfs_mountpoint/dev/pts
 mount --bind /proc rootfs_mountpoint/proc
 mount --bind /sys rootfs_mountpoint/sys
 
-echo "xiaomi-pad-6" > rootfs_mountpoint/etc/hostname
+echo "fajita" > rootfs_mountpoint/etc/hostname
 uuid=$(blkid -o value linux.img | head -n 1)
 echo "UUID=$uuid / ext4 defaults 0 0" >> rootfs_mountpoint/etc/fstab
 echo "nameserver 1.1.1.1" > rootfs_mountpoint/etc/resolv.conf
@@ -64,11 +64,16 @@ chroot rootfs_mountpoint bash -c "passwd user << EOD
 EOD"
 
 echo "%wheel ALL=(ALL:ALL) ALL" > rootfs_mountpoint/etc/sudoers.d/wheel
-echo "repository=https://repo-fastly.voidlinux.org/current/aarch64" > rootfs_mountpoint/etc/xbps.d/00-repository-main.conf
+echo "repository=https://mirrors.tuna.tsinghua.edu.cn/voidlinux/current/aarch64" > rootfs_mountpoint/etc/xbps.d/00-repository-main.conf
 
 chroot rootfs_mountpoint xbps-install -Syu xbps
 chroot rootfs_mountpoint xbps-install -Syuv
 chroot rootfs_mountpoint xbps-install -Sy NetworkManager chrony fake-hwclock nano
+
+# Install zzz CPU control hook
+mkdir -p rootfs_mountpoint/etc/zzz.d
+install -m755 ../config/zzz/99-cpu-control.sh \
+    rootfs_mountpoint/etc/zzz.d/99-cpu-control.sh
 
 # Enable services
 chroot rootfs_mountpoint /bin/bash -c "ln -sv /etc/sv/dbus /etc/runit/runsvdir/default"
@@ -78,18 +83,13 @@ chroot rootfs_mountpoint /bin/bash -c "ln -sv /etc/sv/chronyd /etc/runit/runsvdi
 mkdir rootfs_mountpoint/repo
 mount --bind repo rootfs_mountpoint/repo
 chroot rootfs_mountpoint xbps-install -y --repository /repo $PACKAGES
-
 umount rootfs_mountpoint/repo
 rm -rf rootfs_mountpoint/repo
 
 cp rootfs_mountpoint/boot/boot-*.img ../$OUTDIR/boot.img
 
-echo ""
-read -p "Скрипт завершен. Нажмите Enter для размонтирования и выхода..."
-
 rm rootfs_mountpoint/qemu-aarch64-static
 umount -R rootfs_mountpoint
 img2simg linux.img ../$OUTDIR/void_base.img
 chown -Rvh 1000:1000 ../$OUTDIR
-
 popd
