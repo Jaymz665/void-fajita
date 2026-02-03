@@ -25,7 +25,7 @@ hostmakedepends="tar xz bc elfutils-devel flex gmp-devel kmod libmpc-devel
  pkg-config openssl-devel perl uboot-mkimage cpio pahole python3 zstd"
 
 _localversion="sdm845"
-_kernver="${version}-${_localversion}"
+_kernver="${version}_${revision}-${_localversion}"
 triggers="kernel-hooks"
 kernel_hooks_version="${_kernver}"
 
@@ -51,45 +51,75 @@ if [ "$CROSS_BUILD" ]; then
 	_cross="CROSS_COMPILE=${XBPS_CROSS_TRIPLET}-"
 fi
 
+post_patch() {
+	# avoid the strip wrapper, its used to copy the objects to a new location
+	# and required to avoid absolute relocations.
+	vsed -e "s|\$(STRIP) \(--strip-debug -o \$@ \$<;\)|/usr/bin/${STRIP} \1|" -i drivers/firmware/efi/libstub/Makefile
+
+	# parallel pahole crashes on i686, do one job for now
+	vsed -i "s/\(\$(pahole-flags-y)\)/\1 --jobs=1/" -i scripts/Makefile.btf
+}
+
 do_configure() {
 	local arch
 
-	arch=arm64
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*) arch=arm64;;
+		*) msg_error "Unsupported architecture: $XBPS_TARGET_MACHINE\n";;
+	esac
 
-	cp -f ${FILESDIR}/sdm845.config .config
+	# Use custom sdm845 config file
+	if [ -f ${FILESDIR}/sdm845-dotconfig ]; then
+		msg_normal "Using custom sdm845 dotconfig\n"
+		cp -f ${FILESDIR}/sdm845-dotconfig .config
+		make ${makejobs} ARCH=$arch ${_cross} oldconfig
+	elif [ -f ${FILESDIR}/sdm845.config ]; then
+		msg_normal "Using sdm845 config\n"
+		cp -f ${FILESDIR}/sdm845.config .config
+	fi
+
+	# Always use our revision to CONFIG_LOCALVERSION to match our pkg version.
+	sed -i -e "s|^\(CONFIG_LOCALVERSION=\).*|\1\"-${_localversion}_${revision}\"|" .config
 }
 
 do_build() {
 	local arch _args
 
-	_args="Image modules dtbs"
-	arch=arm64
-
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*) _args="Image modules dtbs"; arch=arm64;;
+	esac
+	
 	export LDFLAGS=
 	make ARCH=$arch ${_cross} ${makejobs} prepare
 	make ARCH=$arch ${_cross} ${makejobs} ${_args}
 }
 
 do_install() {
-	local arch _args hdrdest
+	local arch hdrdest
 
-	arch=arm64
+	case "$XBPS_TARGET_MACHINE" in
+		aarch64*) arch=arm64;;
+	esac
 
 	# Run depmod after compressing modules - makes depmod.sh a noop
 	sed -i '2iexit 0' scripts/depmod.sh
 	vmkdir usr/lib
-	ln -s usr/lib/ ${DESTDIR}
+	ln -sf usr/lib ${DESTDIR}/lib
 
 	# Install kernel, firmware and modules
-	make ${makejobs} ARCH=${arch} INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
+	make ${makejobs} ARCH=$arch INSTALL_MOD_PATH=${DESTDIR} ${_cross} modules_install
 
 	hdrdest=${DESTDIR}/usr/src/kernel-headers-${_kernver}
 
 	vinstall .config 644 boot config-${_kernver}
 	vinstall System.map 644 boot System.map-${_kernver}
 
-	vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
-	make ${makejobs} ARCH=${arch} INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
+	case "$arch" in
+		arm64)
+			vinstall arch/arm64/boot/Image 644 boot vmlinux-${_kernver}
+			make ${makejobs} ARCH=$arch INSTALL_DTBS_PATH=${DESTDIR}/boot/dtbs/dtbs-${_kernver} ${_cross} dtbs_install
+			;;
+	esac
 
 	# Switch to /usr.
 	vmkdir usr
@@ -108,7 +138,7 @@ do_install() {
 		mkdir -p ${hdrdest}/$(dirname $file)
 		install -Dm644 $file ${hdrdest}/${file}
 	done
-	for file in $(find arch/${arch} scripts -name module.lds -o -name Kbuild.platforms -o -name Platform); do
+	for file in $(find arch/$arch scripts -name module.lds -o -name Kbuild.platforms -o -name Platform); do
 		mkdir -p ${hdrdest}/$(dirname $file)
 		install -Dm644 $file ${hdrdest}/${file}
 	done
@@ -117,7 +147,7 @@ do_install() {
 	rm -rf ${DESTDIR}/usr/lib/firmware
 
 	for i in acpi asm-generic clocksource config crypto drm generated linux vdso \
-		math-emu media net pcmcia scsi sound trace uapi video xen dt-bindings; do
+		math-emu media net pcmcia scsi sound trace uapi video xen dt-bindings hyperv keys; do
 		if [ -d include/$i ]; then
 			cp -a include/$i ${hdrdest}/include
 		fi
@@ -131,7 +161,7 @@ do_install() {
 	# if generated files from the scripts/ directory need to be included,
 	# they need to be copied to ${hdrdest} before this step
 	if [ "$CROSS_BUILD" ]; then
-		make ${makejobs} ARCH=${arch} ${_cross} _mrproper_scripts
+		make ${makejobs} ARCH=$arch ${_cross} _mrproper_scripts
 		# remove host specific objects as well
 		find scripts -name '*.o' -delete
 	fi
@@ -149,13 +179,14 @@ do_install() {
 	cp -a kernel/time/timeconst.bc "${hdrdest}/kernel/time"
 	cp -a kernel/bounds.c "${hdrdest}/kernel"
 
-
 	mkdir -p ${hdrdest}/arch/${arch}/kernel
 	cp arch/${arch}/Makefile ${hdrdest}/arch/${arch}
-
-	mkdir -p ${hdrdest}/arch/arm64/kernel
-	cp arch/arm64/kernel/asm-offsets.s ${hdrdest}/arch/arm64/kernel
-	cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
+	
+	if [ "$arch" = "arm64" ]; then
+		mkdir -p ${hdrdest}/arch/arm64/kernel
+		cp arch/arm64/kernel/asm-offsets.s ${hdrdest}/arch/arm64/kernel
+		cp -a arch/arm64/kernel/vdso ${hdrdest}/arch/arm64/kernel/
+	fi
 
 	# Add md headers
 	mkdir -p ${hdrdest}/drivers/md
@@ -174,10 +205,35 @@ do_install() {
 	mkdir -p ${hdrdest}/mm
 	cp fs/xfs/libxfs/xfs_sb.h ${hdrdest}/fs/xfs/libxfs/xfs_sb.h
 
-	# Add objtool binary, needed to build external modules with dkms
-
+	# Add debugging symbols
 	install -Dm644 vmlinux ${DESTDIR}/usr/lib/debug/boot/vmlinux-${_kernver}
 
 	depmod -b ${DESTDIR}/usr -F System.map ${_kernver}
 	rm -f ${DESTDIR}/lib
+}
+
+# Подпакет для заголовков ядра
+linux6.16-sdm845-headers_package() {
+	preserve=yes
+	nostrip=yes
+	noshlibprovides=yes
+	short_desc+=" - source headers for 3rd party modules"
+	pkg_install() {
+		vmove usr/src
+		vmove usr/lib/modules/${_kernver}/build
+	}
+}
+
+# Подпакет для отладочных символов
+linux6.16-sdm845-dbg_package() {
+	preserve=yes
+	nostrip=yes
+	noverifyrdeps=yes
+	noshlibprovides=yes
+	repository=debug
+	short_desc+=" - debugging symbols"
+	pkg_install() {
+		vmove usr/lib/debug
+		vmove "boot/System.map-${_kernver}"
+	}
 }

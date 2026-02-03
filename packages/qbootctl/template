@@ -7,7 +7,9 @@ short_desc="Tool for interacting with Android A/B slots on Qualcomm platforms"
 maintainer="Arseniy <me@adomerle.pw>"
 license="GPL-3.0-or-later"
 homepage="https://github.com/linux-msm/qbootctl"
-distfiles="https://github.com/linux-msm/${pkgname}/archive/refs/tags/${version}.tar.gz"
+distfiles="https://gitlab.com/sdm845-mainline/${pkgname}/-/archive/${version}/${pkgname}-${version}.tar.gz"
+#gitlab.com/sdm845-mainline/qbootctl/-/archive/0.2.0/qbootctl-0.2.0.tar.gz
+#gitlab.com/sdm845-mainline/qbootctl/-/archive/qbootctl-0.2.0.tar.gz
 checksum=08028c28ad157155c0ce6baab780908c4e460503e83d22ce1f4b0932a66fdd3f
 
 post_install() {
